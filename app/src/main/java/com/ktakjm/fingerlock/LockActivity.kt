@@ -38,8 +38,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
+import com.ktakjm.fingerlock.core.FailureNotifier
 import com.ktakjm.fingerlock.core.LockStateManager
+import com.ktakjm.fingerlock.data.FailureEvent
+import com.ktakjm.fingerlock.data.FailureLogRepository
+import com.ktakjm.fingerlock.data.SettingsRepository
 import com.ktakjm.fingerlock.ui.FingerLockTheme
+import kotlinx.coroutines.launch
 
 class LockActivity : FragmentActivity() {
 
@@ -47,10 +53,20 @@ class LockActivity : FragmentActivity() {
     private val appLabel = mutableStateOf("")
     private val appIcon = mutableStateOf<ImageBitmap?>(null)
 
+    // ロックセッション(表示〜認証成功/終了)単位の失敗カウント(issue #1)
+    private var failureCount = 0
+    private var alertFired = false
+    private var failureThreshold = SettingsRepository.DEFAULT_FAILURE_THRESHOLD
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         onBackPressedDispatcher.addCallback(this) { goHome() }
+        lifecycleScope.launch {
+            SettingsRepository.get(this@LockActivity).failureThreshold.collect {
+                failureThreshold = it
+            }
+        }
 
         handleIntent(intent)
         setContent {
@@ -76,6 +92,8 @@ class LockActivity : FragmentActivity() {
 
     private fun handleIntent(intent: Intent) {
         targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE) ?: ""
+        failureCount = 0
+        alertFired = false
         try {
             val info = packageManager.getApplicationInfo(targetPackage, 0)
             appLabel.value = packageManager.getApplicationLabel(info).toString()
@@ -99,6 +117,11 @@ class LockActivity : FragmentActivity() {
                 finish()
             }
 
+            override fun onAuthenticationFailed() {
+                failureCount++
+                if (failureCount >= failureThreshold) fireAlert()
+            }
+
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 when (errorCode) {
                     // キャンセル系はロック画面に留まり、再試行ボタンに任せる
@@ -108,6 +131,8 @@ class LockActivity : FragmentActivity() {
 
                     BiometricPrompt.ERROR_LOCKOUT,
                     BiometricPrompt.ERROR_LOCKOUT_PERMANENT -> {
+                        // OS側の生体認証ロックアウトは閾値未満でも無条件で発火
+                        fireAlert()
                         Toast.makeText(
                             this@LockActivity, R.string.lock_locked_out, Toast.LENGTH_SHORT
                         ).show()
@@ -126,6 +151,23 @@ class LockActivity : FragmentActivity() {
             .setConfirmationRequired(false)
             .build()
         prompt.authenticate(promptInfo)
+    }
+
+    // 通知・履歴記録は1ロックセッションにつき1回まで
+    private fun fireAlert() {
+        if (alertFired) return
+        alertFired = true
+        val timestamp = System.currentTimeMillis()
+        FailureNotifier.notify(
+            applicationContext, targetPackage, appLabel.value, failureCount, timestamp
+        )
+        FailureLogRepository.get(this).log(
+            FailureEvent(
+                timestamp = timestamp,
+                packageName = targetPackage,
+                failureCount = failureCount,
+            )
+        )
     }
 
     private fun goHome() {

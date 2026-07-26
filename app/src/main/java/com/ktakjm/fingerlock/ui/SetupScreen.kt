@@ -1,8 +1,11 @@
 package com.ktakjm.fingerlock.ui
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +39,10 @@ import com.ktakjm.fingerlock.R
 @Composable
 fun SetupScreen(permissions: PermissionState) {
     val context = LocalContext.current
+    // 許可状態の再取得はMainActivityのON_RESUME監視に任せる
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.setup_title)) }) },
     ) { padding ->
@@ -72,6 +79,15 @@ fun SetupScreen(permissions: PermissionState) {
                     context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 },
             )
+            PermissionCard(
+                title = stringResource(R.string.setup_notification_title),
+                description = stringResource(R.string.setup_notification_description),
+                granted = permissions.notificationsGranted,
+                buttonText = stringResource(R.string.setup_request_permission),
+                onOpenSettings = {
+                    notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                },
+            )
         }
     }
 }
@@ -82,6 +98,7 @@ private fun PermissionCard(
     description: String,
     granted: Boolean,
     onOpenSettings: () -> Unit,
+    buttonText: String = stringResource(R.string.setup_open_settings),
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -105,7 +122,7 @@ private fun PermissionCard(
                 }
             } else {
                 Button(onClick = onOpenSettings) {
-                    Text(stringResource(R.string.setup_open_settings))
+                    Text(buttonText)
                 }
             }
         }

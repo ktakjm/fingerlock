@@ -22,6 +22,9 @@ class SettingsRepository private constructor(private val context: Context) {
     val relockOnScreenOff: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_RELOCK_ON_SCREEN_OFF] ?: true }
 
+    val failureThreshold: Flow<Int> =
+        context.dataStore.data.map { it[KEY_FAILURE_THRESHOLD] ?: DEFAULT_FAILURE_THRESHOLD }
+
     suspend fun setLocked(packageName: String, locked: Boolean) {
         context.dataStore.edit { prefs ->
             val current = prefs[KEY_LOCKED_APPS] ?: emptySet()
@@ -37,12 +40,18 @@ class SettingsRepository private constructor(private val context: Context) {
         context.dataStore.edit { it[KEY_RELOCK_ON_SCREEN_OFF] = enabled }
     }
 
+    suspend fun setFailureThreshold(count: Int) {
+        context.dataStore.edit { it[KEY_FAILURE_THRESHOLD] = count }
+    }
+
     companion object {
         private val KEY_LOCKED_APPS = stringSetPreferencesKey("locked_apps")
         private val KEY_GRACE_SECONDS = intPreferencesKey("grace_seconds")
         private val KEY_RELOCK_ON_SCREEN_OFF = booleanPreferencesKey("relock_on_screen_off")
+        private val KEY_FAILURE_THRESHOLD = intPreferencesKey("failure_threshold")
 
         const val DEFAULT_GRACE_SECONDS = 60
+        const val DEFAULT_FAILURE_THRESHOLD = 3
 
         @Volatile
         private var instance: SettingsRepository? = null

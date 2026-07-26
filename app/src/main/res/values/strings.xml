@@ -12,13 +12,17 @@
     <string name="setup_overlay_description">対象アプリの起動時にロック画面を最前面に表示するために必要です。</string>
     <string name="setup_accessibility_title">2. ユーザー補助サービス</string>
     <string name="setup_accessibility_description">対象アプリが前面に来たことを検知するために必要です。「インストール済みアプリ」から FingerLock を選んでONにしてください。</string>
+    <string name="setup_notification_title">3. 通知(任意)</string>
+    <string name="setup_notification_description">ロック解除の連続失敗を通知でお知らせします。未許可でもロック機能は動作します(失敗履歴はアプリ内に記録されます)。</string>
     <string name="setup_granted">許可済み</string>
     <string name="setup_open_settings">設定を開く</string>
+    <string name="setup_request_permission">許可する</string>
 
     <!-- アプリ一覧 -->
     <string name="app_list_search_hint">アプリを検索</string>
     <string name="app_list_locked_count">%1$d 個のアプリをロック中</string>
     <string name="open_settings">設定</string>
+    <string name="open_history">失敗履歴</string>
 
     <!-- 設定 -->
     <string name="settings_title">設定</string>
@@ -31,6 +35,9 @@
     <string name="settings_grace_5m">5分</string>
     <string name="settings_screen_off_title">画面OFFで再ロック</string>
     <string name="settings_screen_off_description">画面を消灯したら、すべてのアプリのロックを解除前の状態に戻します。</string>
+    <string name="settings_failure_threshold_title">失敗アラートの閾値</string>
+    <string name="settings_failure_threshold_description">1回のロック画面で生体認証にこの回数失敗すると、通知と履歴記録を行います。PIN・パターン入力での失敗は検知できません。</string>
+    <string name="settings_failure_threshold_times">%1$d 回</string>
 
     <!-- ロック画面 -->
     <string name="lock_prompt_title">%1$s のロック解除</string>
@@ -38,4 +45,14 @@
     <string name="lock_unlock_button">ロック解除</string>
     <string name="lock_go_home_button">ホームに戻る</string>
     <string name="lock_locked_out">認証に失敗しすぎたため、一時的にロックされています</string>
+
+    <!-- 失敗アラート通知 -->
+    <string name="notification_channel_name">セキュリティアラート</string>
+    <string name="notification_failure_title">%1$s のロック解除に連続失敗</string>
+    <string name="notification_failure_text">%2$s に %1$d 回失敗しました</string>
+
+    <!-- 失敗履歴 -->
+    <string name="history_title">失敗履歴</string>
+    <string name="history_empty">失敗の記録はありません</string>
+    <string name="history_failure_count">%1$d 回失敗</string>
 </resources>

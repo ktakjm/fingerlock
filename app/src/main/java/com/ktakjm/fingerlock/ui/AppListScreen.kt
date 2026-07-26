@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -73,7 +74,7 @@ private const val ICON_SIZE_PX = 128
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppListScreen(onOpenSettings: () -> Unit) {
+fun AppListScreen(onOpenSettings: () -> Unit, onOpenHistory: () -> Unit) {
     val context = LocalContext.current
     val repo = remember { SettingsRepository.get(context) }
     val scope = rememberCoroutineScope()
@@ -89,6 +90,12 @@ fun AppListScreen(onOpenSettings: () -> Unit) {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = onOpenHistory) {
+                        Icon(
+                            imageVector = Icons.Filled.History,
+                            contentDescription = stringResource(R.string.open_history),
+                        )
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(
                             imageVector = Icons.Filled.Settings,

@@ -1,7 +1,10 @@
 package com.ktakjm.fingerlock
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -13,11 +16,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ktakjm.fingerlock.service.AppLockAccessibilityService
 import com.ktakjm.fingerlock.ui.AppListScreen
+import com.ktakjm.fingerlock.ui.FailureHistoryScreen
 import com.ktakjm.fingerlock.ui.FingerLockTheme
 import com.ktakjm.fingerlock.ui.SettingsScreen
 import com.ktakjm.fingerlock.ui.SetupScreen
@@ -25,6 +30,8 @@ import com.ktakjm.fingerlock.ui.SetupScreen
 data class PermissionState(
     val overlayGranted: Boolean,
     val accessibilityEnabled: Boolean,
+    // 通知は任意権限: 未許可でもロック機能は動く(失敗アラート通知だけ飛ばない)
+    val notificationsGranted: Boolean,
 ) {
     val allGranted: Boolean get() = overlayGranted && accessibilityEnabled
 }
@@ -42,22 +49,37 @@ fun checkPermissions(context: Context): PermissionState {
     return PermissionState(
         overlayGranted = Settings.canDrawOverlays(context),
         accessibilityEnabled = accessibilityEnabled,
+        notificationsGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED,
     )
 }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val openHistory = intent.getBooleanExtra(EXTRA_OPEN_HISTORY, false)
         setContent {
             FingerLockTheme {
-                FingerLockApp()
+                FingerLockApp(initialShowHistory = openHistory)
             }
         }
+    }
+
+    companion object {
+        private const val EXTRA_OPEN_HISTORY = "open_history"
+
+        /** 失敗アラート通知タップで履歴画面を直接開く */
+        fun createOpenHistoryIntent(context: Context): Intent =
+            Intent(context, MainActivity::class.java).apply {
+                putExtra(EXTRA_OPEN_HISTORY, true)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
     }
 }
 
 @Composable
-private fun FingerLockApp() {
+private fun FingerLockApp(initialShowHistory: Boolean) {
     val context = LocalContext.current
     var permissions by remember { mutableStateOf(checkPermissions(context)) }
 
@@ -72,9 +94,14 @@ private fun FingerLockApp() {
     }
 
     var showSettings by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(initialShowHistory) }
     when {
         !permissions.allGranted -> SetupScreen(permissions)
+        showHistory -> FailureHistoryScreen(onBack = { showHistory = false })
         showSettings -> SettingsScreen(onBack = { showSettings = false })
-        else -> AppListScreen(onOpenSettings = { showSettings = true })
+        else -> AppListScreen(
+            onOpenSettings = { showSettings = true },
+            onOpenHistory = { showHistory = true },
+        )
     }
 }

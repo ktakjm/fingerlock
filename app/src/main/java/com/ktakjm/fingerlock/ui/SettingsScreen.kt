@@ -42,6 +42,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val graceSeconds by repo.graceSeconds.collectAsState(initial = SettingsRepository.DEFAULT_GRACE_SECONDS)
     val relockOnScreenOff by repo.relockOnScreenOff.collectAsState(initial = true)
+    val failureThreshold by repo.failureThreshold.collectAsState(initial = SettingsRepository.DEFAULT_FAILURE_THRESHOLD)
 
     val graceOptions = listOf(
         0 to stringResource(R.string.settings_grace_immediate),
@@ -49,6 +50,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         60 to stringResource(R.string.settings_grace_1m),
         300 to stringResource(R.string.settings_grace_5m),
     )
+    val thresholdOptions = listOf(2, 3, 5)
 
     Scaffold(
         topBar = {
@@ -125,6 +127,38 @@ fun SettingsScreen(onBack: () -> Unit) {
                     checked = relockOnScreenOff,
                     onCheckedChange = { scope.launch { repo.setRelockOnScreenOff(it) } },
                 )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Text(
+                text = stringResource(R.string.settings_failure_threshold_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            Text(
+                text = stringResource(R.string.settings_failure_threshold_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            thresholdOptions.forEach { count ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { scope.launch { repo.setFailureThreshold(count) } }
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = failureThreshold == count,
+                        onClick = { scope.launch { repo.setFailureThreshold(count) } },
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_failure_threshold_times, count),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
             }
         }
     }
