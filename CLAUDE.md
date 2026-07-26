@@ -15,6 +15,12 @@ JAVA_HOME=$(/usr/libexec/java_home -v 22) ./gradlew :app:installDebug
 
 - minSdk 31 / targetSdk 36。実機はAndroid 16のみ。レガシー分岐(`Build.VERSION` チェック)は原則書かない
 
+## 作業フロー
+
+- 実装 → `./gradlew :app:assembleDebug` で確認 → ユーザーが実機検証 → **ユーザーの指示があってからコミット・プッシュ**(勝手にコミットしない)
+- 実機は手元のAndroid 16の1台のみ。インストールは `./gradlew :app:installDebug`
+- 機能仕様・バックログはGitHub issuesで管理(Project: users/ktakjm/projects/2)。実装完了・実機検証OKになったissueはユーザー確認のうえクローズ
+
 ## 設計上の不変条件(変更・違反する前に要相談)
 
 - **`AppLockAccessibilityService` は自パッケージと `com.android.systemui` を無視する**。これを外すとLockActivity表示→検知→再表示の無限ループになる
