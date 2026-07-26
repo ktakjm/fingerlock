@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.FingerLock" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- ロック画面専用: 最初のフレームから不透明にし、起動アニメーションを無効化して
+         対象アプリのチラ見えを最小化する -->
+    <style name="Theme.FingerLock.Lock">
+        <item name="android:windowBackground">@android:color/system_neutral1_10</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

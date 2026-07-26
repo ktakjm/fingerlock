@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.FingerLock" parent="android:Theme.Material.NoActionBar" />
+
+    <style name="Theme.FingerLock.Lock">
+        <item name="android:windowBackground">@android:color/system_neutral1_900</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

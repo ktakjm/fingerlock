@@ -143,7 +143,7 @@ class LockActivity : FragmentActivity() {
         fun createIntent(context: Context, targetPackage: String): Intent =
             Intent(context, LockActivity::class.java).apply {
                 putExtra(EXTRA_TARGET_PACKAGE, targetPackage)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
             }
     }
 }
