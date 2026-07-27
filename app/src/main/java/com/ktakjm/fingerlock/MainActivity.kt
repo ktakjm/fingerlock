@@ -27,10 +27,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.ktakjm.fingerlock.core.FailureNotifier
+import com.ktakjm.fingerlock.core.FailureAlert
+import com.ktakjm.fingerlock.core.FailureAlertDispatcher
 import com.ktakjm.fingerlock.core.SelfLockState
-import com.ktakjm.fingerlock.data.FailureEvent
-import com.ktakjm.fingerlock.data.FailureLogRepository
 import com.ktakjm.fingerlock.data.SettingsRepository
 import com.ktakjm.fingerlock.service.AppLockAccessibilityService
 import com.ktakjm.fingerlock.ui.AppListScreen
@@ -132,6 +131,8 @@ class MainActivity : FragmentActivity() {
 
     override fun onStop() {
         super.onStop()
+        // バックグラウンドではカメラを保持できない(他アプリも塞ぐ)ので温めた分を解放する
+        FailureAlertDispatcher.releaseCamera()
         // 画面回転では離脱扱いにしない(猶予0でも再認証させない)
         if (!isChangingConfigurations) SelfLockState.onLeft()
     }
@@ -149,7 +150,12 @@ class MainActivity : FragmentActivity() {
 
             override fun onAuthenticationFailed() {
                 failureCount++
-                if (failureCount >= failureThreshold) fireAlert()
+                when {
+                    failureCount >= failureThreshold -> fireAlert()
+                    // カメラ初期化に0.5〜1秒かかるので、閾値の1回手前で温めておく(issue #3)
+                    failureCount == failureThreshold - 1 ->
+                        FailureAlertDispatcher.prepare(this@MainActivity)
+                }
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -164,12 +170,12 @@ class MainActivity : FragmentActivity() {
 
                     BiometricPrompt.ERROR_LOCKOUT,
                     BiometricPrompt.ERROR_LOCKOUT_PERMANENT -> {
-                        // OS側の生体認証ロックアウトは閾値未満でも無条件で発火
-                        fireAlert()
                         Toast.makeText(
                             this@MainActivity, R.string.lock_locked_out, Toast.LENGTH_SHORT
                         ).show()
-                        finish()
+                        // OS側の生体認証ロックアウトは閾値未満でも無条件で発火。
+                        // 離脱するとカメラが切れるので、撮影完了を待ってから閉じる
+                        fireAlert(onComplete = { finish() })
                     }
 
                     else -> Unit
@@ -186,20 +192,22 @@ class MainActivity : FragmentActivity() {
         prompt.authenticate(promptInfo)
     }
 
-    // 通知・履歴記録は1ロックセッションにつき1回まで(対象パッケージ=自分自身)
-    private fun fireAlert() {
-        if (alertFired) return
+    // 撮影・通知・履歴記録は1ロックセッションにつき1回まで(対象パッケージ=自分自身)
+    private fun fireAlert(onComplete: () -> Unit = {}) {
+        if (alertFired) {
+            onComplete()
+            return
+        }
         alertFired = true
-        val timestamp = System.currentTimeMillis()
-        FailureNotifier.notify(
-            applicationContext, packageName, getString(R.string.app_name), failureCount, timestamp
-        )
-        FailureLogRepository.get(this).log(
-            FailureEvent(
-                timestamp = timestamp,
-                packageName = packageName,
+        FailureAlertDispatcher.fire(
+            applicationContext,
+            FailureAlert(
+                targetPackage = packageName,
+                appLabel = getString(R.string.app_name),
                 failureCount = failureCount,
-            )
+                timestamp = System.currentTimeMillis(),
+            ),
+            onComplete,
         )
     }
 

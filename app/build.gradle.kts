@@ -54,6 +54,9 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.8")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.datastore:datastore-preferences:1.1.7")
+    // 連続失敗時のインカメラ撮影(issue #3)。プレビューなしで ImageCapture のみ使う
+    implementation("androidx.camera:camera-camera2:1.6.1")
+    implementation("androidx.camera:camera-lifecycle:1.6.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 }

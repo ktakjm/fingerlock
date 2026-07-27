@@ -20,14 +20,9 @@ object FailureNotifier {
 
     private const val CHANNEL_ID = "security_alerts"
     private const val LARGE_ICON_SIZE_PX = 256
+    private const val BIG_PICTURE_MAX_PX = 1024
 
-    fun notify(
-        context: Context,
-        targetPackage: String,
-        appLabel: String,
-        failureCount: Int,
-        timestamp: Long,
-    ) {
+    fun notify(context: Context, alert: FailureAlert, photoPath: String?) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -48,23 +43,32 @@ object FailureNotifier {
             MainActivity.createOpenHistoryIntent(context),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val time = DateFormat.getTimeFormat(context).format(timestamp)
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val time = DateFormat.getTimeFormat(context).format(alert.timestamp)
+        val text = context.getString(
+            R.string.notification_failure_text, alert.failureCount, time
+        )
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_lock)
             // シルエット表示になるスモールアイコンの代わりに、色でランチャーアイコンと関連づける
             .setColor(ContextCompat.getColor(context, R.color.ic_launcher_background))
-            .setLargeIcon(loadAppIcon(context, targetPackage))
-            .setContentTitle(context.getString(R.string.notification_failure_title, appLabel))
-            .setContentText(
-                context.getString(R.string.notification_failure_text, failureCount, time)
+            .setLargeIcon(loadAppIcon(context, alert.targetPackage))
+            .setContentTitle(
+                context.getString(R.string.notification_failure_title, alert.appLabel)
             )
-            .setWhen(timestamp)
+            .setContentText(text)
+            .setWhen(alert.timestamp)
             .setShowWhen(true)
             .setContentIntent(contentIntent)
             .setAutoCancel(true)
-            .build()
+
+        // 撮影できていれば展開時に侵入者セルフィーを見せる(issue #3)
+        photoPath?.let { IntruderPhotoStore.decode(it, BIG_PICTURE_MAX_PX) }?.let { photo ->
+            builder.setStyle(
+                NotificationCompat.BigPictureStyle().bigPicture(photo).setSummaryText(text)
+            )
+        }
         // イベントごとに別通知として残す
-        manager.notify((timestamp % Int.MAX_VALUE).toInt(), notification)
+        manager.notify((alert.timestamp % Int.MAX_VALUE).toInt(), builder.build())
     }
 
     // 対象アプリのアイコンをラージアイコン(通知右側)に出す。解決できなければ省略

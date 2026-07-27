@@ -38,6 +38,9 @@
     <string name="settings_failure_threshold_title">失敗アラートの閾値</string>
     <string name="settings_failure_threshold_description">1回のロック画面で生体認証にこの回数失敗すると、通知と履歴記録を行います。PIN・パターン入力での失敗は検知できません。</string>
     <string name="settings_failure_threshold_times">%1$d 回</string>
+    <string name="settings_intruder_photo_title">失敗時にインカメラで撮影</string>
+    <string name="settings_intruder_photo_description">失敗アラートの発生時に、インカメラでプレビューなしの写真を1枚撮影し、通知と失敗履歴に残します。ロック解除を試みた人が無断で撮影される点に注意してください。写真は端末内(アプリ専用領域)にのみ保存され、最大20枚を超えると古い順に削除されます。端末によってはシャッター音が鳴ります。</string>
+    <string name="settings_intruder_photo_denied">カメラの権限がないため有効にできません。システムの設定アプリから許可してください。</string>
 
     <!-- ロック画面 -->
     <string name="lock_prompt_title">%1$s のロック解除</string>
@@ -56,4 +59,6 @@
     <string name="history_title">失敗履歴</string>
     <string name="history_empty">失敗の記録はありません</string>
     <string name="history_failure_count">%1$d 回失敗</string>
+    <string name="history_photo_description">撮影された写真</string>
+    <string name="history_photo_close">閉じる</string>
 </resources>

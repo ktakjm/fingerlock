@@ -1,5 +1,9 @@
 package com.ktakjm.fingerlock.ui
 
+import android.Manifest
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,16 +25,20 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ktakjm.fingerlock.R
+import com.ktakjm.fingerlock.core.IntruderCamera
 import com.ktakjm.fingerlock.data.SettingsRepository
 import kotlinx.coroutines.launch
 
@@ -43,6 +51,32 @@ fun SettingsScreen(onBack: () -> Unit) {
     val graceSeconds by repo.graceSeconds.collectAsState(initial = SettingsRepository.DEFAULT_GRACE_SECONDS)
     val relockOnScreenOff by repo.relockOnScreenOff.collectAsState(initial = true)
     val failureThreshold by repo.failureThreshold.collectAsState(initial = SettingsRepository.DEFAULT_FAILURE_THRESHOLD)
+    val intruderPhotoEnabled by repo.intruderPhotoEnabled.collectAsState(initial = false)
+
+    var cameraGranted by remember { mutableStateOf(IntruderCamera.hasPermission(context)) }
+    val cameraDeniedMessage = stringResource(R.string.settings_intruder_photo_denied)
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        cameraGranted = granted
+        if (granted) {
+            scope.launch { repo.setIntruderPhotoEnabled(true) }
+        } else {
+            Toast.makeText(context, cameraDeniedMessage, Toast.LENGTH_LONG).show()
+        }
+    }
+    // 設定アプリで権限を剥がされたままONに見せない
+    LaunchedEffect(intruderPhotoEnabled, cameraGranted) {
+        if (intruderPhotoEnabled && !cameraGranted) repo.setIntruderPhotoEnabled(false)
+    }
+
+    fun setIntruderPhotoEnabled(enabled: Boolean) {
+        if (enabled && !cameraGranted) {
+            cameraLauncher.launch(Manifest.permission.CAMERA)
+        } else {
+            scope.launch { repo.setIntruderPhotoEnabled(enabled) }
+        }
+    }
 
     val graceOptions = listOf(
         0 to stringResource(R.string.settings_grace_immediate),
@@ -159,6 +193,32 @@ fun SettingsScreen(onBack: () -> Unit) {
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { setIntruderPhotoEnabled(!intruderPhotoEnabled) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_intruder_photo_title),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_intruder_photo_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = intruderPhotoEnabled,
+                    onCheckedChange = { setIntruderPhotoEnabled(it) },
+                )
             }
         }
     }

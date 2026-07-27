@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.text.format.DateFormat
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
@@ -26,20 +29,33 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import com.ktakjm.fingerlock.R
+import com.ktakjm.fingerlock.core.IntruderPhotoStore
 import com.ktakjm.fingerlock.data.FailureEvent
 import com.ktakjm.fingerlock.data.FailureLogRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val ICON_SIZE_PX = 128
+private const val THUMBNAIL_MAX_PX = 256
+private const val FULL_PHOTO_MAX_PX = 1440
 
 private data class AppDisplayInfo(val label: String, val icon: ImageBitmap?)
 
@@ -105,6 +121,15 @@ fun FailureHistoryScreen(onBack: () -> Unit) {
     }
 }
 
+// 上限超過で削除済みの写真もあるため、読めなければサムネイルを出さないだけにする(issue #3)
+@Composable
+private fun rememberPhoto(path: String?, maxPx: Int): ImageBitmap? =
+    produceState<ImageBitmap?>(initialValue = null, path, maxPx) {
+        value = path?.let {
+            withContext(Dispatchers.IO) { IntruderPhotoStore.decode(it, maxPx)?.asImageBitmap() }
+        }
+    }.value
+
 @Composable
 private fun FailureRow(event: FailureEvent) {
     val context = LocalContext.current
@@ -113,6 +138,14 @@ private fun FailureRow(event: FailureEvent) {
         val date = DateFormat.getMediumDateFormat(context).format(event.timestamp)
         val time = DateFormat.getTimeFormat(context).format(event.timestamp)
         "$date $time"
+    }
+    val thumbnail = rememberPhoto(event.photoPath, THUMBNAIL_MAX_PX)
+    var expanded by remember { mutableStateOf(false) }
+    if (expanded) {
+        PhotoDialog(
+            image = rememberPhoto(event.photoPath, FULL_PHOTO_MAX_PX) ?: thumbnail,
+            onDismiss = { expanded = false },
+        )
     }
     Row(
         modifier = Modifier
@@ -150,5 +183,50 @@ private fun FailureRow(event: FailureEvent) {
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.error,
         )
+        if (thumbnail != null) {
+            Image(
+                bitmap = thumbnail,
+                contentDescription = stringResource(R.string.history_photo_description),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .padding(start = 12.dp)
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { expanded = true },
+            )
+        }
+    }
+}
+
+@Composable
+private fun PhotoDialog(image: ImageBitmap?, onDismiss: () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (image != null) {
+                Image(
+                    bitmap = image,
+                    contentDescription = stringResource(R.string.history_photo_description),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Text(
+                text = stringResource(R.string.history_photo_close),
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(32.dp),
+            )
+        }
     }
 }

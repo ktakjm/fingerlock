@@ -28,6 +28,8 @@ JAVA_HOME=$(/usr/libexec/java_home -v 22) ./gradlew :app:installDebug
 - **窓イベントは「実在するActivityか」を `getActivityInfo` で確認してから処理する**(`isActivity`)。外すとIMEやシステムダイアログを前面アプリとして誤検知し、猶予セッションが壊れる
 - **`LockActivity` にはセルフロック(issue #2)を適用しない**。二重認証・ループになる
 - **解除セッションの状態はプロセス内メモリ(`LockStateManager`)のみ**。永続化するとサービス再起動時に古い解除状態が復活してしまうので、DataStoreに保存するのは設定値だけ
+- **失敗アラートの発火経路は `FailureAlertDispatcher.fire()` に一本化する**。トリガー(閾値到達・ロックアウト・issue #7のキャンセル検知)とアクション(通知・撮影・issue #4のメール)を分離しておくため、`LockActivity` / `MainActivity` はイベントを渡すだけにしてアクションを直接呼ばない
+- **インカメラ撮影(issue #3)はActivityのライフサイクルにバインドしない**。`IntruderCamera` 内の専用 `LifecycleOwner` に繋ぎ、`onStop` と発火完了時に明示的に `release()` する。バックグラウンドではカメラを保持できず、撮影中の離脱で切断されるため、ロックアウト経路は撮影完了(`onComplete`)を待ってから画面を閉じる
 - 画面OFF→ONで同一アプリが前面のままの場合、windowイベントは発火しない。再ロックは `ACTION_USER_PRESENT` 受信時の `pendingLockTarget()` チェックで実現している
 - ユーザー補助の設定は `canRetrieveWindowContent="false"` を維持する(画面内容を読まないことが権限説明の根拠)
 

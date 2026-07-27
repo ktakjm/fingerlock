@@ -25,6 +25,10 @@ class SettingsRepository private constructor(private val context: Context) {
     val failureThreshold: Flow<Int> =
         context.dataStore.data.map { it[KEY_FAILURE_THRESHOLD] ?: DEFAULT_FAILURE_THRESHOLD }
 
+    // 無断撮影になるため既定OFF。ONにはCAMERA権限が必要(issue #3)
+    val intruderPhotoEnabled: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_INTRUDER_PHOTO] ?: false }
+
     suspend fun setLocked(packageName: String, locked: Boolean) {
         context.dataStore.edit { prefs ->
             val current = prefs[KEY_LOCKED_APPS] ?: emptySet()
@@ -44,11 +48,16 @@ class SettingsRepository private constructor(private val context: Context) {
         context.dataStore.edit { it[KEY_FAILURE_THRESHOLD] = count }
     }
 
+    suspend fun setIntruderPhotoEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_INTRUDER_PHOTO] = enabled }
+    }
+
     companion object {
         private val KEY_LOCKED_APPS = stringSetPreferencesKey("locked_apps")
         private val KEY_GRACE_SECONDS = intPreferencesKey("grace_seconds")
         private val KEY_RELOCK_ON_SCREEN_OFF = booleanPreferencesKey("relock_on_screen_off")
         private val KEY_FAILURE_THRESHOLD = intPreferencesKey("failure_threshold")
+        private val KEY_INTRUDER_PHOTO = booleanPreferencesKey("intruder_photo_enabled")
 
         const val DEFAULT_GRACE_SECONDS = 60
         const val DEFAULT_FAILURE_THRESHOLD = 3
