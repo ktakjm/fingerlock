@@ -7,25 +7,39 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
-import androidx.activity.ComponentActivity
+import android.widget.Toast
 import androidx.activity.compose.setContent
+import androidx.biometric.BiometricManager.Authenticators
+import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import com.ktakjm.fingerlock.core.FailureNotifier
+import com.ktakjm.fingerlock.core.SelfLockState
+import com.ktakjm.fingerlock.data.FailureEvent
+import com.ktakjm.fingerlock.data.FailureLogRepository
+import com.ktakjm.fingerlock.data.SettingsRepository
 import com.ktakjm.fingerlock.service.AppLockAccessibilityService
 import com.ktakjm.fingerlock.ui.AppListScreen
 import com.ktakjm.fingerlock.ui.FailureHistoryScreen
 import com.ktakjm.fingerlock.ui.FingerLockTheme
+import com.ktakjm.fingerlock.ui.LockScreen
 import com.ktakjm.fingerlock.ui.SettingsScreen
 import com.ktakjm.fingerlock.ui.SetupScreen
+import kotlinx.coroutines.launch
 
 data class PermissionState(
     val overlayGranted: Boolean,
@@ -55,19 +69,143 @@ fun checkPermissions(context: Context): PermissionState {
     )
 }
 
-class MainActivity : ComponentActivity() {
+// BiometricPromptを使うためFragmentActivityを継承する(issue #2)
+class MainActivity : FragmentActivity() {
+
+    private val selfLocked = mutableStateOf(true)
+    private var promptShowing = false
+
+    // ロックセッション(表示〜認証成功)単位の失敗カウント(issue #1をセルフロックにも適用)
+    private var failureCount = 0
+    private var alertFired = false
+    private var failureThreshold = SettingsRepository.DEFAULT_FAILURE_THRESHOLD
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val settings = SettingsRepository.get(this)
+        lifecycleScope.launch {
+            settings.graceSeconds.collect { SelfLockState.graceMillis = it * 1000L }
+        }
+        lifecycleScope.launch {
+            settings.failureThreshold.collect { failureThreshold = it }
+        }
+
         val openHistory = intent.getBooleanExtra(EXTRA_OPEN_HISTORY, false)
+        val selfIcon = packageManager.getApplicationIcon(packageName)
+            .toBitmap(ICON_SIZE_PX, ICON_SIZE_PX)
+            .asImageBitmap()
         setContent {
             FingerLockTheme {
-                FingerLockApp(initialShowHistory = openHistory)
+                val locked by selfLocked
+                if (locked) {
+                    LockScreen(
+                        label = stringResource(R.string.app_name),
+                        icon = selfIcon,
+                        secondaryLabel = stringResource(R.string.lock_close_button),
+                        onAuthenticate = { showSelfLockPrompt() },
+                        onSecondary = { finish() },
+                    )
+                } else {
+                    FingerLockApp(initialShowHistory = openHistory)
+                }
             }
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // 初回セットアップ(権限誘導画面)は認証なしで表示する
+        if (!checkPermissions(this).allGranted) {
+            selfLocked.value = false
+            return
+        }
+        if (SelfLockState.shouldAuthenticate()) {
+            // 未認証のまま離れて戻った場合は同一セッション扱いで失敗カウントを引き継ぐ
+            if (!selfLocked.value) {
+                failureCount = 0
+                alertFired = false
+            }
+            selfLocked.value = true
+            showSelfLockPrompt()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 画面回転では離脱扱いにしない(猶予0でも再認証させない)
+        if (!isChangingConfigurations) SelfLockState.onLeft()
+    }
+
+    private fun showSelfLockPrompt() {
+        // BiometricPromptのPIN入力画面から戻る際のonStartで二重に出さない
+        if (promptShowing) return
+        promptShowing = true
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                promptShowing = false
+                SelfLockState.onUnlocked()
+                selfLocked.value = false
+            }
+
+            override fun onAuthenticationFailed() {
+                failureCount++
+                if (failureCount >= failureThreshold) fireAlert()
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                promptShowing = false
+                when (errorCode) {
+                    // 明示キャンセルはアプリを閉じる(ホームに送る必要はない)
+                    BiometricPrompt.ERROR_USER_CANCELED,
+                    BiometricPrompt.ERROR_NEGATIVE_BUTTON -> finish()
+
+                    // システム都合のキャンセルはロック画面に留まり、再試行ボタンに任せる
+                    BiometricPrompt.ERROR_CANCELED -> Unit
+
+                    BiometricPrompt.ERROR_LOCKOUT,
+                    BiometricPrompt.ERROR_LOCKOUT_PERMANENT -> {
+                        // OS側の生体認証ロックアウトは閾値未満でも無条件で発火
+                        fireAlert()
+                        Toast.makeText(
+                            this@MainActivity, R.string.lock_locked_out, Toast.LENGTH_SHORT
+                        ).show()
+                        finish()
+                    }
+
+                    else -> Unit
+                }
+            }
+        }
+        val prompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this), callback)
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(getString(R.string.lock_prompt_title, getString(R.string.app_name)))
+            .setSubtitle(getString(R.string.lock_prompt_subtitle))
+            .setAllowedAuthenticators(Authenticators.BIOMETRIC_STRONG or Authenticators.DEVICE_CREDENTIAL)
+            .setConfirmationRequired(false)
+            .build()
+        prompt.authenticate(promptInfo)
+    }
+
+    // 通知・履歴記録は1ロックセッションにつき1回まで(対象パッケージ=自分自身)
+    private fun fireAlert() {
+        if (alertFired) return
+        alertFired = true
+        val timestamp = System.currentTimeMillis()
+        FailureNotifier.notify(
+            applicationContext, packageName, getString(R.string.app_name), failureCount, timestamp
+        )
+        FailureLogRepository.get(this).log(
+            FailureEvent(
+                timestamp = timestamp,
+                packageName = packageName,
+                failureCount = failureCount,
+            )
+        )
+    }
+
     companion object {
         private const val EXTRA_OPEN_HISTORY = "open_history"
+        private const val ICON_SIZE_PX = 192
 
         /** 失敗アラート通知タップで履歴画面を直接開く */
         fun createOpenHistoryIntent(context: Context): Intent =

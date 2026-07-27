@@ -44,6 +44,7 @@
     <string name="lock_prompt_subtitle">続行するには認証してください</string>
     <string name="lock_unlock_button">ロック解除</string>
     <string name="lock_go_home_button">ホームに戻る</string>
+    <string name="lock_close_button">閉じる</string>
     <string name="lock_locked_out">認証に失敗しすぎたため、一時的にロックされています</string>
 
     <!-- 失敗アラート通知 -->

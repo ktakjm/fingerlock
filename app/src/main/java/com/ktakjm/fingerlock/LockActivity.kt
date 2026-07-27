@@ -10,31 +10,11 @@ import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.biometric.BiometricManager.Authenticators
 import androidx.biometric.BiometricPrompt
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.fragment.app.FragmentActivity
@@ -45,6 +25,7 @@ import com.ktakjm.fingerlock.data.FailureEvent
 import com.ktakjm.fingerlock.data.FailureLogRepository
 import com.ktakjm.fingerlock.data.SettingsRepository
 import com.ktakjm.fingerlock.ui.FingerLockTheme
+import com.ktakjm.fingerlock.ui.LockScreen
 import kotlinx.coroutines.launch
 
 class LockActivity : FragmentActivity() {
@@ -76,8 +57,9 @@ class LockActivity : FragmentActivity() {
                 LockScreen(
                     label = label,
                     icon = icon,
+                    secondaryLabel = stringResource(R.string.lock_go_home_button),
                     onAuthenticate = { showPrompt() },
-                    onGoHome = { goHome() },
+                    onSecondary = { goHome() },
                 )
             }
         }
@@ -187,47 +169,5 @@ class LockActivity : FragmentActivity() {
                 putExtra(EXTRA_TARGET_PACKAGE, targetPackage)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
             }
-    }
-}
-
-@Composable
-private fun LockScreen(
-    label: String,
-    icon: ImageBitmap?,
-    onAuthenticate: () -> Unit,
-    onGoHome: () -> Unit,
-) {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            if (icon != null) {
-                Image(
-                    bitmap = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(72.dp),
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.Lock,
-                    contentDescription = null,
-                    modifier = Modifier.size(72.dp),
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-            Text(text = label, style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(48.dp))
-            Button(onClick = onAuthenticate) {
-                Text(stringResource(R.string.lock_unlock_button))
-            }
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = onGoHome) {
-                Text(stringResource(R.string.lock_go_home_button))
-            }
-        }
     }
 }
