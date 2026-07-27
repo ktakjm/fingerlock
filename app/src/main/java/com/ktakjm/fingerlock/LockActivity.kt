@@ -42,6 +42,7 @@ class LockActivity : FragmentActivity() {
     // 同セッション内で認証せずプロンプトを閉じた回数(issue #7)
     private var dismissCount = 0
     private var leaving = false
+    private var promptShowing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,6 +73,12 @@ class LockActivity : FragmentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // 同じアプリの再検知(アプリ側の画面遷移でロック画面が背面に回された場合)は前面に戻すだけ。
+        // セッションを継続させ、プロンプトも二重に出さない(issue #8)
+        if (intent.getStringExtra(EXTRA_TARGET_PACKAGE) == targetPackage) {
+            if (!promptShowing) showPrompt()
+            return
+        }
         handleIntent(intent)
         showPrompt()
     }
@@ -111,10 +118,12 @@ class LockActivity : FragmentActivity() {
             finish()
             return
         }
+        promptShowing = true
         // 発火のたびにカメラは解放されるので、再試行のたびに温め直す(warmUpは冪等)
         FailureAlertDispatcher.prepare(this)
         val callback = object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                promptShowing = false
                 LockStateManager.onUnlocked(targetPackage)
                 // 対象アプリにカメラを渡すため、finish前に解放しておく
                 FailureAlertDispatcher.releaseCamera()
@@ -127,6 +136,8 @@ class LockActivity : FragmentActivity() {
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                // エラー種別によらずプロンプトは畳まれている
+                promptShowing = false
                 when (errorCode) {
                     // 自分で閉じた場合だけ発火。画面OFF等でも飛ぶERROR_CANCELEDは対象外(issue #7)
                     // ロック画面には留まるので、撮影完了を待たずに再試行ボタンへ戻してよい

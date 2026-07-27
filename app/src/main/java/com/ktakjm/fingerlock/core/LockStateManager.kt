@@ -26,22 +26,31 @@ object LockStateManager {
     private val sessions = mutableMapOf<String, Long>()
     private var currentForeground: String? = null
 
-    /** 前面のActivityのパッケージが変わったときに呼ぶ。ロック画面を出すべきなら true を返す。 */
+    /**
+     * 前面のActivityのwindowイベントごとに呼ぶ。ロック画面を出すべきなら true を返す。
+     *
+     * 同一パッケージの再イベントでも解除セッションが無ければ true を返す。ロック画面表示中は
+     * 自パッケージを無視する都合で [currentForeground] が対象アプリのまま固定されるため、
+     * 「同一パッケージなら何もしない」にすると、対象アプリが自タスクを前面に戻したときに
+     * ロック画面が背面へ沈んだまま再ロックがかからない(issue #8)。
+     */
     @Synchronized
     fun onForeground(packageName: String): Boolean {
-        if (packageName == currentForeground) return false
         val now = SystemClock.elapsedRealtime()
 
-        // 直前の前面アプリが解除状態だったら「離脱」として記録する
-        currentForeground?.let { previous ->
-            if (sessions[previous] == IN_FOREGROUND) {
-                if (graceMillis <= 0L) sessions.remove(previous) else sessions[previous] = now
+        // 離脱の記録は「前面アプリが実際に入れ替わったとき」だけ
+        if (packageName != currentForeground) {
+            currentForeground?.let { previous ->
+                if (sessions[previous] == IN_FOREGROUND) {
+                    if (graceMillis <= 0L) sessions.remove(previous) else sessions[previous] = now
+                }
             }
+            currentForeground = packageName
         }
-        currentForeground = packageName
 
         if (packageName !in lockedApps) return false
 
+        // 解除済みで前面(IN_FOREGROUND)なら false のままなので、解除後のアプリ内遷移では再ロックしない
         val leftAt = sessions[packageName]
         return when {
             leftAt == null -> true

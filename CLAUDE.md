@@ -24,8 +24,10 @@ JAVA_HOME=$(/usr/libexec/java_home -v 22) ./gradlew :app:installDebug
 ## 設計上の不変条件(変更・違反する前に要相談)
 
 - **`AppLockAccessibilityService` は自パッケージと `com.android.systemui` を無視する**。これを外すとLockActivity表示→検知→再表示の無限ループになる
+- **`LockStateManager.onForeground()` を「同一パッケージなら即 false」にしてはいけない**。上記のとおりロック画面表示中は `currentForeground` が対象アプリのまま固定されるため、対象アプリが自タスクを前面に戻したときに再ロックできなくなる(issue #8)。判定はあくまで解除セッション(`sessions[pkg]`)の有無で行い、パッケージの一致は離脱時刻の記録にだけ使う
 - **ロック画面の起動は `SYSTEM_ALERT_WINDOW` 許可によるBAL免除に依存している**。オーバーレイ許可の誘導をセットアップから外すとサービスからのActivity起動がOSにブロックされる
 - **窓イベントは「実在するActivityか」を `getActivityInfo` で確認してから処理する**(`isActivity`)。外すとIMEやシステムダイアログを前面アプリとして誤検知し、猶予セッションが壊れる
+- **`LockActivity.onNewIntent` は同一ターゲットに対して冪等に保つ**。上記の再ロックで同じアプリの検知が繰り返されるため、カウンタをリセットしたりプロンプトを出し直したりするとセッションが壊れ、プロンプトがちらつく
 - **`LockActivity` にはセルフロック(issue #2)を適用しない**。二重認証・ループになる
 - **解除セッションの状態はプロセス内メモリ(`LockStateManager`)のみ**。永続化するとサービス再起動時に古い解除状態が復活してしまうので、DataStoreに保存するのは設定値だけ
 - **失敗アラートの発火経路は `FailureAlertDispatcher.fire()` に一本化する**。トリガー(閾値到達・ロックアウト・キャンセル検知)とアクション(通知・撮影・issue #4のメール)を分離しておくため、`LockActivity` / `MainActivity` はイベントを渡すだけにしてアクションを直接呼ばない。種別ごとの実行アクションは `FailureAlertDispatcher.actionsFor()` の1箇所で決める
