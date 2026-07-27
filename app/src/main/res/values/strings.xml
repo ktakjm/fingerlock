@@ -54,11 +54,14 @@
     <string name="notification_channel_name">セキュリティアラート</string>
     <string name="notification_failure_title">%1$s のロック解除に連続失敗</string>
     <string name="notification_failure_text">%2$s に %1$d 回失敗しました</string>
+    <string name="notification_dismissed_title">%1$s のロック解除が中断されました</string>
+    <string name="notification_dismissed_text">%1$s に認証せずプロンプトが閉じられました</string>
 
     <!-- 失敗履歴 -->
     <string name="history_title">失敗履歴</string>
     <string name="history_empty">失敗の記録はありません</string>
     <string name="history_failure_count">%1$d 回失敗</string>
+    <string name="history_dismissed">認証せず閉じた</string>
     <string name="history_photo_description">撮影された写真</string>
     <string name="history_photo_close">閉じる</string>
 </resources>

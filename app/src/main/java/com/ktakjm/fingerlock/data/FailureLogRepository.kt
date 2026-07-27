@@ -14,12 +14,23 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Serializable
+enum class FailureEventType {
+    /** 生体認証の連続失敗、またはOS側の生体認証ロックアウト(issue #1) */
+    BIOMETRIC_FAIL,
+
+    /** 認証せずプロンプトを閉じた(issue #7) */
+    DISMISSED,
+}
+
+@Serializable
 data class FailureEvent(
     val timestamp: Long,
     val packageName: String,
+    /** 同一ロックセッション内で、この種別のイベントが何回目かを表す */
     val failureCount: Int,
-    // 将来の写真添付(別issue)用に最初から持たせる
     val photoPath: String? = null,
+    // デフォルト値付きの追加なので、既存の履歴JSONもマイグレーションなしで読める(issue #7)
+    val type: FailureEventType = FailureEventType.BIOMETRIC_FAIL,
 )
 
 private val Context.failureLogDataStore by preferencesDataStore(name = "failure_log")

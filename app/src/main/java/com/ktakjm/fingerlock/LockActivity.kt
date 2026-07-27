@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import com.ktakjm.fingerlock.core.FailureAlert
 import com.ktakjm.fingerlock.core.FailureAlertDispatcher
 import com.ktakjm.fingerlock.core.LockStateManager
+import com.ktakjm.fingerlock.data.FailureEventType
 import com.ktakjm.fingerlock.data.SettingsRepository
 import com.ktakjm.fingerlock.ui.FingerLockTheme
 import com.ktakjm.fingerlock.ui.LockScreen
@@ -37,6 +38,10 @@ class LockActivity : FragmentActivity() {
     private var failureCount = 0
     private var alertFired = false
     private var failureThreshold = SettingsRepository.DEFAULT_FAILURE_THRESHOLD
+
+    // 同セッション内で認証せずプロンプトを閉じた回数(issue #7)
+    private var dismissCount = 0
+    private var leaving = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,6 +76,12 @@ class LockActivity : FragmentActivity() {
         showPrompt()
     }
 
+    override fun onStart() {
+        super.onStart()
+        // キャンセルは予告なく起きるので、ロック画面が見えている間はカメラを温めておく(issue #7)
+        FailureAlertDispatcher.prepare(this)
+    }
+
     override fun onStop() {
         super.onStop()
         // バックグラウンドではカメラを保持できない(他アプリも塞ぐ)ので温めた分を解放する
@@ -81,6 +92,8 @@ class LockActivity : FragmentActivity() {
         targetPackage = intent.getStringExtra(EXTRA_TARGET_PACKAGE) ?: ""
         failureCount = 0
         alertFired = false
+        dismissCount = 0
+        leaving = false
         try {
             val info = packageManager.getApplicationInfo(targetPackage, 0)
             appLabel.value = packageManager.getApplicationLabel(info).toString()
@@ -98,26 +111,28 @@ class LockActivity : FragmentActivity() {
             finish()
             return
         }
+        // 発火のたびにカメラは解放されるので、再試行のたびに温め直す(warmUpは冪等)
+        FailureAlertDispatcher.prepare(this)
         val callback = object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 LockStateManager.onUnlocked(targetPackage)
+                // 対象アプリにカメラを渡すため、finish前に解放しておく
+                FailureAlertDispatcher.releaseCamera()
                 finish()
             }
 
             override fun onAuthenticationFailed() {
                 failureCount++
-                when {
-                    failureCount >= failureThreshold -> fireAlert()
-                    // カメラ初期化に0.5〜1秒かかるので、閾値の1回手前で温めておく(issue #3)
-                    failureCount == failureThreshold - 1 ->
-                        FailureAlertDispatcher.prepare(this@LockActivity)
-                }
+                if (failureCount >= failureThreshold) fireAlert()
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 when (errorCode) {
+                    // 自分で閉じた場合だけ発火。画面OFF等でも飛ぶERROR_CANCELEDは対象外(issue #7)
+                    // ロック画面には留まるので、撮影完了を待たずに再試行ボタンへ戻してよい
+                    BiometricPrompt.ERROR_USER_CANCELED -> fireDismissed()
+
                     // キャンセル系はロック画面に留まり、再試行ボタンに任せる
-                    BiometricPrompt.ERROR_USER_CANCELED,
                     BiometricPrompt.ERROR_NEGATIVE_BUTTON,
                     BiometricPrompt.ERROR_CANCELED -> Unit
 
@@ -152,24 +167,41 @@ class LockActivity : FragmentActivity() {
             return
         }
         alertFired = true
+        fire(FailureEventType.BIOMETRIC_FAIL, failureCount, onComplete)
+    }
+
+    // 認証せず閉じた回数は生体失敗とは別に数える。間引きはDispatcher側のクールダウンに任せる(issue #7)
+    private fun fireDismissed() {
+        dismissCount++
+        fire(FailureEventType.DISMISSED, dismissCount)
+    }
+
+    private fun fire(type: FailureEventType, count: Int, onComplete: () -> Unit = {}) {
         FailureAlertDispatcher.fire(
             applicationContext,
             FailureAlert(
+                type = type,
                 targetPackage = targetPackage,
                 appLabel = appLabel.value,
-                failureCount = failureCount,
+                failureCount = count,
                 timestamp = System.currentTimeMillis(),
             ),
             onComplete,
         )
     }
 
+    // 撮影中に離脱するとカメラが切られるので、完了(最大1.5秒)を待ってからホームに戻る。
+    // 戻るジェスチャーの連打で二重に走らせない
     private fun goHome() {
-        startActivity(Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        })
-        finish()
+        if (leaving) return
+        leaving = true
+        FailureAlertDispatcher.awaitInFlight {
+            startActivity(Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            })
+            finish()
+        }
     }
 
     companion object {

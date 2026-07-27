@@ -30,6 +30,7 @@ import androidx.lifecycle.lifecycleScope
 import com.ktakjm.fingerlock.core.FailureAlert
 import com.ktakjm.fingerlock.core.FailureAlertDispatcher
 import com.ktakjm.fingerlock.core.SelfLockState
+import com.ktakjm.fingerlock.data.FailureEventType
 import com.ktakjm.fingerlock.data.SettingsRepository
 import com.ktakjm.fingerlock.service.AppLockAccessibilityService
 import com.ktakjm.fingerlock.ui.AppListScreen
@@ -79,6 +80,9 @@ class MainActivity : FragmentActivity() {
     private var alertFired = false
     private var failureThreshold = SettingsRepository.DEFAULT_FAILURE_THRESHOLD
 
+    // 同セッション内で認証せずプロンプトを閉じた回数(issue #7)。誤爆頻度を測るため毎回記録する
+    private var dismissCount = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val settings = SettingsRepository.get(this)
@@ -102,7 +106,8 @@ class MainActivity : FragmentActivity() {
                         icon = selfIcon,
                         secondaryLabel = stringResource(R.string.lock_close_button),
                         onAuthenticate = { showSelfLockPrompt() },
-                        onSecondary = { finish() },
+                        // 撮影中に閉じるとカメラが切られるので、完了(最大1.5秒)を待つ
+                        onSecondary = { FailureAlertDispatcher.awaitInFlight { finish() } },
                     )
                 } else {
                     FingerLockApp(initialShowHistory = openHistory)
@@ -123,6 +128,7 @@ class MainActivity : FragmentActivity() {
             if (!selfLocked.value) {
                 failureCount = 0
                 alertFired = false
+                dismissCount = 0
             }
             selfLocked.value = true
             showSelfLockPrompt()
@@ -141,28 +147,31 @@ class MainActivity : FragmentActivity() {
         // BiometricPromptのPIN入力画面から戻る際のonStartで二重に出さない
         if (promptShowing) return
         promptShowing = true
+        // キャンセルは予告なく起きるので、認証を求めている間はカメラを温めておく(issue #7)
+        FailureAlertDispatcher.prepare(this)
         val callback = object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 promptShowing = false
                 SelfLockState.onUnlocked()
                 selfLocked.value = false
+                // 解除後もActivityは残るので、温めたカメラを明示的に手放す
+                FailureAlertDispatcher.releaseCamera()
             }
 
             override fun onAuthenticationFailed() {
                 failureCount++
-                when {
-                    failureCount >= failureThreshold -> fireAlert()
-                    // カメラ初期化に0.5〜1秒かかるので、閾値の1回手前で温めておく(issue #3)
-                    failureCount == failureThreshold - 1 ->
-                        FailureAlertDispatcher.prepare(this@MainActivity)
-                }
+                if (failureCount >= failureThreshold) fireAlert()
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 promptShowing = false
                 when (errorCode) {
+                    // 自分で閉じた場合だけ発火。画面OFF等でも飛ぶERROR_CANCELEDは対象外(issue #7)
+                    BiometricPrompt.ERROR_USER_CANCELED ->
+                        // 閉じるとカメラが切れるので、撮影完了を待ってからアプリを閉じる
+                        fireDismissed(onComplete = { finish() })
+
                     // 明示キャンセルはアプリを閉じる(ホームに送る必要はない)
-                    BiometricPrompt.ERROR_USER_CANCELED,
                     BiometricPrompt.ERROR_NEGATIVE_BUTTON -> finish()
 
                     // システム都合のキャンセルはロック画面に留まり、再試行ボタンに任せる
@@ -199,12 +208,23 @@ class MainActivity : FragmentActivity() {
             return
         }
         alertFired = true
+        fire(FailureEventType.BIOMETRIC_FAIL, failureCount, onComplete)
+    }
+
+    // 認証せず閉じた回数は生体失敗とは別に数える。間引きはDispatcher側のクールダウンに任せる(issue #7)
+    private fun fireDismissed(onComplete: () -> Unit = {}) {
+        dismissCount++
+        fire(FailureEventType.DISMISSED, dismissCount, onComplete)
+    }
+
+    private fun fire(type: FailureEventType, count: Int, onComplete: () -> Unit = {}) {
         FailureAlertDispatcher.fire(
             applicationContext,
             FailureAlert(
+                type = type,
                 targetPackage = packageName,
                 appLabel = getString(R.string.app_name),
-                failureCount = failureCount,
+                failureCount = count,
                 timestamp = System.currentTimeMillis(),
             ),
             onComplete,

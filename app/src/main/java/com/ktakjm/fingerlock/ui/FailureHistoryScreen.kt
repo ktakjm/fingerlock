@@ -49,6 +49,7 @@ import androidx.core.graphics.drawable.toBitmap
 import com.ktakjm.fingerlock.R
 import com.ktakjm.fingerlock.core.IntruderPhotoStore
 import com.ktakjm.fingerlock.data.FailureEvent
+import com.ktakjm.fingerlock.data.FailureEventType
 import com.ktakjm.fingerlock.data.FailureLogRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -178,10 +179,19 @@ private fun FailureRow(event: FailureEvent) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        // キャンセルは正規ユーザーの離脱でも起きうる弱いシグナルなので、失敗と同じ強調はしない
         Text(
-            text = stringResource(R.string.history_failure_count, event.failureCount),
+            text = when (event.type) {
+                FailureEventType.BIOMETRIC_FAIL ->
+                    stringResource(R.string.history_failure_count, event.failureCount)
+
+                FailureEventType.DISMISSED -> stringResource(R.string.history_dismissed)
+            },
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.error,
+            color = when (event.type) {
+                FailureEventType.BIOMETRIC_FAIL -> MaterialTheme.colorScheme.error
+                FailureEventType.DISMISSED -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
         )
         if (thumbnail != null) {
             Image(

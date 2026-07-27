@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.ktakjm.fingerlock.MainActivity
 import com.ktakjm.fingerlock.R
+import com.ktakjm.fingerlock.data.FailureEventType
 
 /** 連続認証失敗アラートの通知(NotificationChannel: security_alerts) */
 object FailureNotifier {
@@ -44,17 +45,26 @@ object FailureNotifier {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val time = DateFormat.getTimeFormat(context).format(alert.timestamp)
-        val text = context.getString(
-            R.string.notification_failure_text, alert.failureCount, time
-        )
+        val title = when (alert.type) {
+            FailureEventType.BIOMETRIC_FAIL ->
+                context.getString(R.string.notification_failure_title, alert.appLabel)
+
+            FailureEventType.DISMISSED ->
+                context.getString(R.string.notification_dismissed_title, alert.appLabel)
+        }
+        val text = when (alert.type) {
+            FailureEventType.BIOMETRIC_FAIL ->
+                context.getString(R.string.notification_failure_text, alert.failureCount, time)
+
+            FailureEventType.DISMISSED ->
+                context.getString(R.string.notification_dismissed_text, time)
+        }
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_lock)
             // シルエット表示になるスモールアイコンの代わりに、色でランチャーアイコンと関連づける
             .setColor(ContextCompat.getColor(context, R.color.ic_launcher_background))
             .setLargeIcon(loadAppIcon(context, alert.targetPackage))
-            .setContentTitle(
-                context.getString(R.string.notification_failure_title, alert.appLabel)
-            )
+            .setContentTitle(title)
             .setContentText(text)
             .setWhen(alert.timestamp)
             .setShowWhen(true)
