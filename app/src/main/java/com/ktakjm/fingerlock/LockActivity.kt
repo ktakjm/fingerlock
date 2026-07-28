@@ -24,6 +24,7 @@ import com.ktakjm.fingerlock.core.FailureAlertDispatcher
 import com.ktakjm.fingerlock.core.LockStateManager
 import com.ktakjm.fingerlock.data.FailureEventType
 import com.ktakjm.fingerlock.data.SettingsRepository
+import com.ktakjm.fingerlock.service.BlindOverlay
 import com.ktakjm.fingerlock.ui.FingerLockTheme
 import com.ktakjm.fingerlock.ui.LockScreen
 import kotlinx.coroutines.launch
@@ -81,6 +82,17 @@ class LockActivity : FragmentActivity() {
         }
         handleIntent(intent)
         showPrompt()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // サービスが被せた目隠し(issue #5)は、自分の最初のフレームが描き終わってから外す。
+        // onWindowFocusChanged はBiometricPromptに先にフォーカスを取られると発火しない一方、
+        // 発火する場合は初回描画前に来ることがあり、遅すぎ(タイムアウトまで真っ暗)と
+        // 早すぎ(対象アプリが数フレーム露出)の両方が起きる
+        val decor = window.decorView
+        decor.viewTreeObserver.registerFrameCommitCallback { BlindOverlay.hideActive() }
+        decor.invalidate()
     }
 
     override fun onStart() {
