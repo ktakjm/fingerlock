@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.biometric.BiometricManager.Authenticators
 import androidx.biometric.BiometricPrompt
@@ -261,6 +262,11 @@ private fun FingerLockApp(initialShowHistory: Boolean) {
 
     var showSettings by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(initialShowHistory) }
+    // OSの戻る操作でもアプリを終了させずトップ(アプリ一覧)に戻す
+    BackHandler(enabled = permissions.allGranted && (showHistory || showSettings)) {
+        showHistory = false
+        showSettings = false
+    }
     when {
         !permissions.allGranted -> SetupScreen(permissions)
         showHistory -> FailureHistoryScreen(onBack = { showHistory = false })
