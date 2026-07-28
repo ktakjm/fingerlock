@@ -21,6 +21,7 @@
     <!-- アプリ一覧 -->
     <string name="app_list_search_hint">アプリを検索</string>
     <string name="app_list_locked_count">%1$d 個のアプリをロック中</string>
+    <string name="app_list_filter_locked">ロック中のみ</string>
     <string name="open_settings">設定</string>
     <string name="open_history">失敗履歴</string>
 

@@ -3,6 +3,7 @@ package com.ktakjm.fingerlock.ui
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +82,14 @@ fun AppListScreen(onOpenSettings: () -> Unit, onOpenHistory: () -> Unit) {
     val scope = rememberCoroutineScope()
     val lockedApps by repo.lockedApps.collectAsState(initial = emptySet())
     var query by remember { mutableStateOf("") }
+    var lockedOnly by remember { mutableStateOf(false) }
+    // チップON時点のロック集合。ON中にトグルをOFFにした項目がその場でリストから
+    // 消えないよう、絞り込みは live の lockedApps ではなくこのスナップショットで行う(issue #6)
+    var lockedOnlySnapshot by remember { mutableStateOf(emptySet<String>()) }
+    val toggleLockedOnly = {
+        lockedOnly = !lockedOnly
+        if (lockedOnly) lockedOnlySnapshot = lockedApps
+    }
 
     val apps by produceState<List<AppEntry>?>(initialValue = null) {
         value = withContext(Dispatchers.IO) { loadLaunchableApps(context) }
@@ -121,12 +131,26 @@ fun AppListScreen(onOpenSettings: () -> Unit, onOpenHistory: () -> Unit) {
                 placeholder = { Text(stringResource(R.string.app_list_search_hint)) },
                 singleLine = true,
             )
-            Text(
-                text = stringResource(R.string.app_list_locked_count, lockedApps.size),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterChip(
+                    selected = lockedOnly,
+                    onClick = toggleLockedOnly,
+                    label = { Text(stringResource(R.string.app_list_filter_locked)) },
+                )
+                Text(
+                    text = stringResource(R.string.app_list_locked_count, lockedApps.size),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .clickable(onClick = toggleLockedOnly)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
 
             val loaded = apps
             if (loaded == null) {
@@ -135,9 +159,13 @@ fun AppListScreen(onOpenSettings: () -> Unit, onOpenHistory: () -> Unit) {
                 }
             } else {
                 val filtered = loaded.filter {
-                    query.isBlank() ||
+                    val matchesQuery = query.isBlank() ||
                         it.label.contains(query, ignoreCase = true) ||
                         it.packageName.contains(query, ignoreCase = true)
+                    val matchesLocked = !lockedOnly ||
+                        it.packageName in lockedOnlySnapshot ||
+                        it.packageName in lockedApps
+                    matchesQuery && matchesLocked
                 }
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(filtered, key = { it.packageName }) { entry ->
