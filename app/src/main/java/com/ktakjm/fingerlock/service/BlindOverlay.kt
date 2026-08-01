@@ -15,12 +15,19 @@ import android.view.WindowManager
  * 上のレイヤーに乗るため、LockActivityが描画され次第 [hideActive] で即座に外す。
  * BAL失敗などでLockActivityが来なかった場合に画面が目隠しで詰まらないよう、
  * [TIMEOUT_MILLIS] 経過で強制的に外す。
+ *
+ * ただし TYPE_ACCESSIBILITY_OVERLAY はキーガードよりも上に乗るため、画面OFF中の
+ * 先回り表示に使うと、点灯時にロック解除画面ごと黒く覆って端末を解錠できなくする。
+ * そのため消灯中の先回り分は belowKeyguard=true でキーガード下・アプリ上の
+ * TYPE_APPLICATION_OVERLAY(SYSTEM_ALERT_WINDOW 許可済みが前提。BAL免除と同じ)を使い、
+ * キーガードが消えた瞬間から対象アプリだけを覆う。
  */
 class BlindOverlay(private val service: AccessibilityService) {
 
     private val handler = Handler(Looper.getMainLooper())
     private val timeout = Runnable { remove() }
     private var view: View? = null
+    private var belowKeyguard = false
 
     init {
         active = this
@@ -33,16 +40,22 @@ class BlindOverlay(private val service: AccessibilityService) {
      * その場合のタイムアウトは、解錠後の再表示(USER_PRESENT→showLock)か
      * 画面ON時の [armTimeout] 呼び出しで起動される。
      */
-    fun show(armTimeout: Boolean = true) {
+    fun show(armTimeout: Boolean = true, belowKeyguard: Boolean = false) {
         handler.removeCallbacks(timeout)
         if (armTimeout) handler.postDelayed(timeout, TIMEOUT_MILLIS)
-        if (view != null) return
+        if (view != null) {
+            // キーガード下に置き直したいのに検知用の最上層レイヤーのままなら作り直す
+            // (呼ばれるのは消灯直後なので張り替えは見えない)。逆方向はどちらのレイヤーでも
+            // 対象アプリを覆えているので、張り替えて一瞬の露出を作らない
+            if (belowKeyguard && !this.belowKeyguard) detach() else return
+        }
         // 色はLockActivityのwindowBackground(Theme.FingerLock.Lock)と揃えてシームレスに繋ぐ
         val blind = View(service).apply { setBackgroundColor(service.getColor(backgroundColor())) }
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            if (belowKeyguard) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.OPAQUE,
         ).apply {
@@ -54,6 +67,7 @@ class BlindOverlay(private val service: AccessibilityService) {
         try {
             service.getSystemService(WindowManager::class.java).addView(blind, params)
             view = blind
+            this.belowKeyguard = belowKeyguard
         } catch (e: Exception) {
             // サービス切断直後などでaddViewに失敗しても、目隠しなしのロックとして続行できる
         }
@@ -69,6 +83,10 @@ class BlindOverlay(private val service: AccessibilityService) {
     /** タイムアウト時・ロック不要アプリの前面化時にも呼ばれる。未表示なら何もしない。 */
     fun remove() {
         handler.removeCallbacks(timeout)
+        detach()
+    }
+
+    private fun detach() {
         val blind = view ?: return
         view = null
         try {
