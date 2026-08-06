@@ -39,6 +39,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ktakjm.fingerlock.R
 import com.ktakjm.fingerlock.core.IntruderCamera
+import com.ktakjm.fingerlock.data.DismissAlertMode
 import com.ktakjm.fingerlock.data.SettingsRepository
 import kotlinx.coroutines.launch
 
@@ -52,6 +53,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val relockOnScreenOff by repo.relockOnScreenOff.collectAsState(initial = true)
     val failureThreshold by repo.failureThreshold.collectAsState(initial = SettingsRepository.DEFAULT_FAILURE_THRESHOLD)
     val intruderPhotoEnabled by repo.intruderPhotoEnabled.collectAsState(initial = false)
+    val dismissAlertMode by repo.dismissAlertMode.collectAsState(initial = DismissAlertMode.ALERT)
 
     var cameraGranted by remember { mutableStateOf(IntruderCamera.hasPermission(context)) }
     val cameraDeniedMessage = stringResource(R.string.settings_intruder_photo_denied)
@@ -85,6 +87,11 @@ fun SettingsScreen(onBack: () -> Unit) {
         300 to stringResource(R.string.settings_grace_5m),
     )
     val thresholdOptions = listOf(2, 3, 5)
+    val dismissModeOptions = listOf(
+        DismissAlertMode.ALERT to stringResource(R.string.settings_dismiss_mode_alert),
+        DismissAlertMode.LOG_ONLY to stringResource(R.string.settings_dismiss_mode_log_only),
+        DismissAlertMode.OFF to stringResource(R.string.settings_dismiss_mode_off),
+    )
 
     Scaffold(
         topBar = {
@@ -192,6 +199,35 @@ fun SettingsScreen(onBack: () -> Unit) {
                         text = stringResource(R.string.settings_failure_threshold_times, count),
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Text(
+                text = stringResource(R.string.settings_dismiss_mode_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            Text(
+                text = stringResource(R.string.settings_dismiss_mode_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            dismissModeOptions.forEach { (mode, label) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { scope.launch { repo.setDismissAlertMode(mode) } }
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = dismissAlertMode == mode,
+                        onClick = { scope.launch { repo.setDismissAlertMode(mode) } },
+                    )
+                    Text(text = label, style = MaterialTheme.typography.bodyLarge)
                 }
             }
 

@@ -2,6 +2,7 @@ package com.ktakjm.fingerlock.core
 
 import android.content.Context
 import android.os.SystemClock
+import com.ktakjm.fingerlock.data.DismissAlertMode
 import com.ktakjm.fingerlock.data.FailureEvent
 import com.ktakjm.fingerlock.data.FailureEventType
 import com.ktakjm.fingerlock.data.FailureLogRepository
@@ -47,7 +48,7 @@ object FailureAlertDispatcher {
     private var inFlight: Job? = null
 
     /**
-     * 種別に応じたアクションを実行する。クールダウン中なら何もせず [onComplete] だけ呼ぶ。
+     * 種別に応じたアクションを実行する。設定で無効化中・クールダウン中なら何もせず [onComplete] だけ呼ぶ。
      * 同一ロックセッション内の重複抑止は発火元の責務。
      *
      * @param onComplete 完了後にメインスレッドで呼ばれる。撮影中にアプリがバックグラウンドへ
@@ -55,14 +56,13 @@ object FailureAlertDispatcher {
      */
     fun fire(context: Context, alert: FailureAlert, onComplete: () -> Unit = {}) {
         val app = context.applicationContext
-        val actions = actionsFor(alert.type)
-        if (!shouldFire(alert, actions.cooldownMillis)) {
-            onComplete()
-            return
-        }
         val job = scope.launch {
-            val photoPath = if (actions.capturePhoto) capturePhoto(app, alert.timestamp) else null
-            IntruderCamera.release()
+            // 設定で無効化されている種別、またはクールダウン中なら何もしない
+            val actions = actionsFor(app, alert.type) ?: return@launch
+            if (!shouldFire(alert, actions.cooldownMillis)) return@launch
+            val photoPath = if (actions.capturePhoto) {
+                capturePhoto(app, alert.timestamp).also { IntruderCamera.release() }
+            } else null
             if (actions.notify) {
                 // 写真のデコードを伴うのでメインスレッドから外す
                 withContext(Dispatchers.IO) { FailureNotifier.notify(app, alert, photoPath) }
@@ -127,13 +127,23 @@ object FailureAlertDispatcher {
         val cooldownMillis: Long,
     )
 
-    private fun actionsFor(type: FailureEventType): AlertActions = when (type) {
+    /** null はその種別を一切記録しない(履歴にも残さない) */
+    private suspend fun actionsFor(app: Context, type: FailureEventType): AlertActions? = when (type) {
         // 閾値到達・ロックアウトはセッション単位で1回に絞られているので間引かない
         FailureEventType.BIOMETRIC_FAIL ->
             AlertActions(capturePhoto = true, notify = true, cooldownMillis = 0L)
 
+        // キャンセルの扱いは設定で変えられる(issue #11)。履歴のみでも間引きは維持する
         FailureEventType.DISMISSED ->
-            AlertActions(capturePhoto = true, notify = true, DISMISS_COOLDOWN_MILLIS)
+            when (SettingsRepository.get(app).dismissAlertMode.first()) {
+                DismissAlertMode.ALERT ->
+                    AlertActions(capturePhoto = true, notify = true, DISMISS_COOLDOWN_MILLIS)
+
+                DismissAlertMode.LOG_ONLY ->
+                    AlertActions(capturePhoto = false, notify = false, DISMISS_COOLDOWN_MILLIS)
+
+                DismissAlertMode.OFF -> null
+            }
     }
 
     /**
