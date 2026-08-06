@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
+import com.ktakjm.fingerlock.core.DismissJudge
 import com.ktakjm.fingerlock.core.FailureAlert
 import com.ktakjm.fingerlock.core.FailureAlertDispatcher
 import com.ktakjm.fingerlock.core.LockStateManager
@@ -44,6 +45,9 @@ class LockActivity : FragmentActivity() {
     private var dismissCount = 0
     private var leaving = false
     private var promptShowing = false
+
+    // ERROR_USER_CANCELEDが本物のキャンセルかタスク退去かの判定(issue #10)
+    private val dismissJudge = DismissJudge(this) { fireDismissed() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -131,6 +135,7 @@ class LockActivity : FragmentActivity() {
             return
         }
         promptShowing = true
+        dismissJudge.onPromptShown()
         // 発火のたびにカメラは解放されるので、再試行のたびに温め直す(warmUpは冪等)
         FailureAlertDispatcher.prepare(this)
         val callback = object : BiometricPrompt.AuthenticationCallback() {
@@ -151,9 +156,10 @@ class LockActivity : FragmentActivity() {
                 // エラー種別によらずプロンプトは畳まれている
                 promptShowing = false
                 when (errorCode) {
-                    // 自分で閉じた場合だけ発火。画面OFF等でも飛ぶERROR_CANCELEDは対象外(issue #7)
-                    // ロック画面には留まるので、撮影完了を待たずに再試行ボタンへ戻してよい
-                    BiometricPrompt.ERROR_USER_CANCELED -> fireDismissed()
+                    // 自分で閉じた場合だけ発火したいが、SystemUIによるタスク退去も同じコードで
+                    // 届くため、前面に残っているかの判定に回す(issue #10)。
+                    // 画面OFF等でも飛ぶERROR_CANCELEDは従来どおり対象外(issue #7)
+                    BiometricPrompt.ERROR_USER_CANCELED -> dismissJudge.submit()
 
                     // キャンセル系はロック画面に留まり、再試行ボタンに任せる
                     BiometricPrompt.ERROR_NEGATIVE_BUTTON,
@@ -218,6 +224,9 @@ class LockActivity : FragmentActivity() {
     private fun goHome() {
         if (leaving) return
         leaving = true
+        // 判定猶予中の離脱はここに来た時点で明示的なユーザー操作なので、
+        // タスク退去ではなく本物のキャンセルとして確定させてから離脱する(issue #10)
+        dismissJudge.flush()
         FailureAlertDispatcher.awaitInFlight {
             startActivity(Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)

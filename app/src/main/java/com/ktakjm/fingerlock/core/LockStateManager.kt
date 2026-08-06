@@ -72,6 +72,14 @@ object LockStateManager {
         sessions[packageName] = IN_FOREGROUND
     }
 
+    /**
+     * 直近のwindowイベントで観測した前面パッケージ。自パッケージ・SystemUI・Meta広告は
+     * サービス側で無視されるため反映されない(ロック画面表示中は対象アプリのまま固定される)。
+     * プロンプトを閉じた後の離脱先の判定に使う(issue #10)
+     */
+    @Synchronized
+    fun foregroundPackage(): String? = currentForeground
+
     /** 画面消灯時に呼ぶ。設定が有効なら全セッションを破棄する。 */
     @Synchronized
     fun onScreenOff() {

@@ -32,6 +32,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 22) ./gradlew :app:installDebug
 - **解除セッションの状態はプロセス内メモリ(`LockStateManager`)のみ**。永続化するとサービス再起動時に古い解除状態が復活してしまうので、DataStoreに保存するのは設定値だけ
 - **失敗アラートの発火経路は `FailureAlertDispatcher.fire()` に一本化する**。トリガー(閾値到達・ロックアウト・キャンセル検知)とアクション(通知・撮影・issue #4のメール)を分離しておくため、`LockActivity` / `MainActivity` はイベントを渡すだけにしてアクションを直接呼ばない。種別ごとの実行アクションは `FailureAlertDispatcher.actionsFor()` の1箇所で決める
 - **キャンセル検知(issue #7)の対象は `ERROR_USER_CANCELED` のみ**。`ERROR_CANCELED`(コード5)は画面OFFやホームキーなどシステム都合でも飛ぶので数えてはいけない
+- **`ERROR_USER_CANCELED` も即カウントしてはいけない**。SystemUIは表示中に別タスクが前面に来るとプロンプトを強制クローズし(タスク退去)、それも本物のキャンセルと同じ `ERROR_USER_CANCELED` で届く(issue #10)。判定は `DismissJudge` に一本化する: (1) 表示から400ms未満の強制クローズは人間ではないので棄却、(2) 受信後500msを前面(resumed)のまま生き残れば本物、(3) 前面を失った場合(**退去では `onPause` がエラーより先に届くこともある**)は離脱先で判定し、ホーム/ランチャーならユーザーの離脱として数え、他アプリのActivityなら退去として棄却(前面の観測は `LockStateManager.foregroundPackage()`)。「閉じる」・戻るの明示離脱は `flush()` を離脱処理より先に呼んで即確定する。ロック画面・セルフロックの両方に適用する
 - **キャンセルの間引きはセッション単位ではなくパッケージ単位のクールダウンで行う**。ロック画面は閉じても前面に残る(閉じる→再試行→閉じるが同一セッション)一方、セルフロックはキャンセルで即 `finish()` して毎回新しいセッションになるため、セッション単位では片方にしか効かない
 - **`FailureEvent` へのフィールド追加は必ずデフォルト値付きにする**。kotlinx-serializationのデフォルト値で既存の履歴JSONをそのまま読めるようにし、マイグレーションを不要に保つ
 - **インカメラ撮影(issue #3)はActivityのライフサイクルにバインドしない**。`IntruderCamera` 内の専用 `LifecycleOwner` に繋ぎ、`onStop`・認証成功・発火完了時に明示的に `release()` する

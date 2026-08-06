@@ -28,6 +28,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import com.ktakjm.fingerlock.core.DismissJudge
 import com.ktakjm.fingerlock.core.FailureAlert
 import com.ktakjm.fingerlock.core.FailureAlertDispatcher
 import com.ktakjm.fingerlock.core.SelfLockState
@@ -84,6 +85,11 @@ class MainActivity : FragmentActivity() {
     // 同セッション内で認証せずプロンプトを閉じた回数(issue #7)。誤爆頻度を測るため毎回記録する
     private var dismissCount = 0
 
+    // ERROR_USER_CANCELEDが本物のキャンセルかタスク退去かの判定(issue #10)。
+    // 本物なら記録し、閉じるとカメラが切れるので撮影完了を待ってからアプリを閉じる。
+    // タスク退去なら何もしない(戻ってきたときにonStartのshouldAuthenticateがプロンプトを出し直す)
+    private val dismissJudge = DismissJudge(this) { fireDismissed(onComplete = { finish() }) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val settings = SettingsRepository.get(this)
@@ -107,8 +113,7 @@ class MainActivity : FragmentActivity() {
                         icon = selfIcon,
                         secondaryLabel = stringResource(R.string.lock_close_button),
                         onAuthenticate = { showSelfLockPrompt() },
-                        // 撮影中に閉じるとカメラが切られるので、完了(最大1.5秒)を待つ
-                        onSecondary = { FailureAlertDispatcher.awaitInFlight { finish() } },
+                        onSecondary = { closeSelf() },
                     )
                 } else {
                     FingerLockApp(initialShowHistory = openHistory)
@@ -148,6 +153,7 @@ class MainActivity : FragmentActivity() {
         // BiometricPromptのPIN入力画面から戻る際のonStartで二重に出さない
         if (promptShowing) return
         promptShowing = true
+        dismissJudge.onPromptShown()
         // キャンセルは予告なく起きるので、認証を求めている間はカメラを温めておく(issue #7)
         FailureAlertDispatcher.prepare(this)
         val callback = object : BiometricPrompt.AuthenticationCallback() {
@@ -167,10 +173,10 @@ class MainActivity : FragmentActivity() {
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 promptShowing = false
                 when (errorCode) {
-                    // 自分で閉じた場合だけ発火。画面OFF等でも飛ぶERROR_CANCELEDは対象外(issue #7)
-                    BiometricPrompt.ERROR_USER_CANCELED ->
-                        // 閉じるとカメラが切れるので、撮影完了を待ってからアプリを閉じる
-                        fireDismissed(onComplete = { finish() })
+                    // 自分で閉じた場合だけ発火したいが、SystemUIによるタスク退去も同じコードで
+                    // 届くため、前面に残っているかの判定に回す(issue #10)。
+                    // 画面OFF等でも飛ぶERROR_CANCELEDは従来どおり対象外(issue #7)
+                    BiometricPrompt.ERROR_USER_CANCELED -> dismissJudge.submit()
 
                     // 明示キャンセルはアプリを閉じる(ホームに送る必要はない)
                     BiometricPrompt.ERROR_NEGATIVE_BUTTON -> finish()
@@ -200,6 +206,13 @@ class MainActivity : FragmentActivity() {
             .setConfirmationRequired(false)
             .build()
         prompt.authenticate(promptInfo)
+    }
+
+    // 撮影中に閉じるとカメラが切られるので、完了(最大1.5秒)を待つ。
+    // 判定猶予中の「閉じる」は明示的なユーザー操作なので、本物のキャンセルとして確定させてから閉じる(issue #10)
+    private fun closeSelf() {
+        dismissJudge.flush()
+        FailureAlertDispatcher.awaitInFlight { finish() }
     }
 
     // 撮影・通知・履歴記録は1ロックセッションにつき1回まで(対象パッケージ=自分自身)
